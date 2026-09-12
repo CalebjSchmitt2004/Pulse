@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ monitor.name }} | Pulse{% endblock %}
+{% block header %}
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+  <span style="color:var(--text-secondary);">Monitors</span>
+  <span style="color:var(--border);">/</span>
+  <span style="font-weight:600;">{{ monitor.name }}</span>
+  <span style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">#{{ monitor.id }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+  <form method="post" action="/monitors/{{ monitor.id }}/pause"><button class="btn btn-outline btn-sm" type="submit">{% if monitor.is_paused %}▶ Resume{% else %}⏸ Pause{% endif %}</button></form>
+  <a href="/monitors/{{ monitor.id }}/edit" class="btn btn-outline btn-sm">✎ Edit</a>
+  <button type="button" class="btn btn-danger btn-sm" style="margin-left:auto;" onclick="confirmDeleteMonitor({{ monitor.id }})">Delete</button>
+  <button type="button" class="btn btn-danger btn-sm" onclick="confirmClearMonitor({{ monitor.id }})">Clear Data</button>
+</div>
+
+<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:20px;">
+  <div style="flex:1;min-width:0;">
+    <div class="uptime-bars detail-bars" id="detail-uptime-bars" style="margin-bottom:8px;">
+      {% for c in checks_chart[-50:] %}
+        <div class="uptime-bar {{ c.status }}"></div>
+      {% else %}
+        <span style="font-size:0.8rem;color:var(--text-secondary);">No checks yet</span>
+      {% endfor %}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-secondary);">
+      <span id="detail-checks-count">{{ checks|length }} checks</span>
+      <span>now</span>
+    </div>
+  </div>
+  <div id="detail-status-pill" class="status-pill-big {% if monitor.status=='up' %}up{% elif monitor.status=='down' %}down{% elif monitor.status=='degraded' %}degraded{% else %}pending{% endif %}" style="margin-left:auto;">
+    {{ monitor.status | capitalize }}
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin-top:20px;">
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">
+      {% if monitor.monitor_type in ['http','https'] %}Response{% else %}Ping{% endif %} (Current)
+    </div>
+    <div id="stat-current" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">
+      {% if monitor.last_response_time_ms %}{{ "%.0f"|format(monitor.last_response_time_ms) }}ms{% else %}N/A{% endif %}
+    </div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">Avg (24h)</div>
+    <div id="stat-avg" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">
+      {% set avg = checks|selectattr('status','equalto','up')|map(attribute='response_time_ms')|reject('none')|list %}
+      {% if avg %}{{ "%.2f"|format((avg|sum)/(avg|length)) }}ms{% else %}N/A{% endif %}
+    </div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">Uptime (24h)</div>
+    <div id="stat-u24" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">{{ monitor.uptime_24h }}%</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">Uptime (30d)</div>
+    <div id="stat-u30" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">{{ monitor.uptime_30d }}%</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">Cert Expiry</div>
+    <div id="stat-cert" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">
+      {% if cert_days is not none %}{{ cert_days }}d{% else %}N/A{% endif %}
+    </div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="color:var(--text-secondary);font-size:0.8rem;font-weight:500;">Domain Expiry</div>
+    <div id="stat-domain" style="font-size:1.4rem;font-weight:700;margin-top:8px;letter-spacing:-0.5px;">
+      {% if domain_days is not none %}{{ domain_days }}d{% else %}N/A{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="font-weight:600;font-size:0.95rem;">Response Time History</div>
+  </div>
+  <div class="line-chart"><canvas id="respChart"></canvas></div>
+</div>
+
+<script>
+var POLL_MS = Math.max({{ monitor.interval_seconds * 1000 }}, 2000);
+
+function drawDetailChart(){
+  var raw = [
+    {% for c in checks_chart %}
+      {% if c.response_time_ms is not none and c.status == 'up' %}
+        {{ c.response_time_ms }},
+      {% else %}
+        null,
+      {% endif %}
+    {% endfor %}
+  ];
+  var points = raw.filter(function(v){ return v !== null && v !== undefined && !isNaN(v); });
+  if(window.drawLineChart) window.drawLineChart('respChart', points, '#4ade80');
+}
+document.addEventListener('DOMContentLoaded', drawDetailChart);
+
+function updateDetail(){
+  fetch('/api/monitors/{{ monitor.id }}/status').then(function(r){ return r.json(); }).then(function(m){
+    var eff = m.status || 'pending';
+    var pill = document.getElementById('detail-status-pill');
+    if(pill){
+      var curClass = pill.classList.contains('up') ? 'up' : (pill.classList.contains('down') ? 'down' : (pill.classList.contains('degraded') ? 'degraded' : 'pending'));
+      var newClass = eff==='up'?'up':(eff==='down'?'down':(eff==='degraded'?'degraded':'pending'));
+      if(curClass !== newClass){
+        pill.className = 'status-pill-big ' + newClass;
+        pill.textContent = eff.charAt(0).toUpperCase() + eff.slice(1);
+      }
+    }
+    var bars = document.getElementById('detail-uptime-bars');
+    if(bars && m.checks){
+      var checks = m.checks || [];
+      if(checks.length === 0){
+        bars.innerHTML = '<span style="font-size:0.8rem;color:var(--text-secondary);">No checks yet</span>';
+      } else {
+        var html = '';
+        checks.slice(-50).forEach(function(c, idx, arr){
+          var isLast = idx === arr.length - 1;
+          html += '<div class="uptime-bar ' + c.status + (isLast ? ' bar-new' : '') + '"></div>';
+        });
+        bars.innerHTML = html;
+      }
+    }
+    var cnt = document.getElementById('detail-checks-count');
+    if(cnt) cnt.textContent = (m.checks ? m.checks.length : 0) + ' checks';
+    var cur = document.getElementById('stat-current');
+    if(cur) cur.textContent = m.last_response_time_ms ? Math.round(m.last_response_time_ms)+'ms' : 'N/A';
+    var avg = document.getElementById('stat-avg');
+    if(avg) avg.textContent = m.avg_24h ? m.avg_24h+'ms' : 'N/A';
+    var u24 = document.getElementById('stat-u24');
+    if(u24) u24.textContent = m.uptime_24h+'%';
+    var u30 = document.getElementById('stat-u30');
+    if(u30) u30.textContent = m.uptime_30d+'%';
+    var cert = document.getElementById('stat-cert');
+    if(cert) cert.textContent = (m.cert_days !== null && m.cert_days !== undefined) ? m.cert_days+'d' : 'N/A';
+    var dom = document.getElementById('stat-domain');
+    if(dom) dom.textContent = (m.domain_days !== null && m.domain_days !== undefined) ? m.domain_days+'d' : 'N/A';
+    var points = (m.checks || []).filter(function(c){ return c.response_time_ms !== null && c.status === 'up'; })
+                                 .map(function(c){ return c.response_time_ms; });
+    if(window.drawLineChart) window.drawLineChart('respChart', points, '#4ade80');
+  });
+}
+setInterval(updateDetail, POLL_MS);
+
+function confirmDeleteMonitor(id){
+  openModal({
+    title: 'Delete Monitor?',
+    body: '<p style="margin:0;color:var(--text-secondary);">This action cannot be undone.</p>',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      fetch('/monitors/' + id + '/delete', {method:'POST'}).then(function(){ window.location.href = '/monitors'; });
+    }
+  });
+}
+function confirmClearMonitor(id){
+  openModal({
+    title: 'Clear History?',
+    body: '<p style="margin:0;color:var(--text-secondary);">Remove all response time data for this monitor?</p>',
+    confirmText: 'Clear',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      fetch('/api/monitors/' + id + '/clear', {method:'POST'}).then(function(){ location.reload(); });
+    }
+  });
+}
+</script>
+{% endblock %}

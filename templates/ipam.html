@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}IPAM | Pulse{% endblock %}
+{% block header %}IP Address Management{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+  <form method="get" action="/ipam" style="display:flex;gap:10px;align-items:center;">
+    <select name="subnet" onchange="this.form.submit()" style="width:auto;min-width:260px;">
+      {% for s in subnets %}
+        <option value="{{ s.id }}" {% if selected and selected.id == s.id %}selected{% endif %}>{{ s.network }}{% if s.description %} — {{ s.description }}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <button class="btn btn-primary" onclick="openAddSubnetModal()">+ Add Subnet</button>
+</div>
+
+{% if selected %}
+<script>
+window.currentSubnet = {
+  id: {{ selected.id }},
+  description: {{ (selected.description or '') | tojson }},
+  vlan_tags: {{ (selected.vlan_tags or '') | tojson }}
+};
+</script>
+
+<div style="display:grid;grid-template-columns:300px 1fr;gap:20px;margin-bottom:24px;align-items:start;">
+  <div class="card" style="display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;">
+    <div class="donut-wrap" id="subnetDonut"></div>
+    <div>
+      <div style="font-size:0.9rem;color:var(--text-secondary);font-weight:500;margin-bottom:2px;">
+        {% if selected.description %}{{ selected.description }}{% else %}Untitled Network{% endif %}
+      </div>
+      <div style="font-size:1.35rem;font-weight:700;">{{ selected.network }}</div>
+      <div style="color:var(--text-secondary);font-size:0.85rem;margin-top:4px;">{{ stats.used }} / {{ stats.total }} used</div>
+      {% if selected.vlan_tags %}
+        <div style="display:inline-flex;margin-top:8px;padding:3px 10px;background:var(--surface-2);border-radius:999px;font-size:0.75rem;color:var(--text-secondary);border:1px solid var(--border);">VLANs: {{ selected.vlan_tags }}</div>
+      {% endif %}
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;">
+        <form method="post" action="/api/subnets/{{ selected.id }}/scan" style="display:inline;">
+          <button class="btn btn-outline btn-sm" type="submit">⟳ Scan</button>
+        </form>
+        <button class="btn btn-outline btn-sm" onclick="openEditSubnetModal()">✎ Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmDeleteSubnet()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:0.82rem;margin-bottom:16px;align-items:center;">
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#22d3ee;display:inline-block;"></span> Device</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#f97316;display:inline-block;"></span> VM</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#60a5fa;display:inline-block;"></span> Container</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#facc15;display:inline-block;"></span> Reserved</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#a3e635;display:inline-block;"></span> Gateway/DNS</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#c084fc;display:inline-block;"></span> DHCP</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#34d399;display:inline-block;"></span> Static</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#8b92a8;display:inline-block;"></span> Offline</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:2px;background:#2a2e37;display:inline-block;"></span> Free</span>
+    </div>
+    <div class="ip-grid">
+      {% for ip in ips %}
+        <div class="ip-block {{ ip.status }}" title="{{ ip.address }} — {{ ip.status }}{% if ip.hostname %} ({{ ip.hostname }}){% endif %}"></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Assigned Addresses</div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>IP Address</th>
+          <th>Hostname</th>
+          <th>Status</th>
+          <th>Tags</th>
+          <th>Last Seen</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ip in ips if ip.status != 'free' %}
+        <tr>
+          <td><span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.9rem;">{{ ip.address }}</span></td>
+          <td>{{ ip.hostname or '—' }}</td>
+          <td><span class="status-badge" style="text-transform:capitalize; background: rgba(139,146,168,0.12);">{{ ip.status }}</span></td>
+          <td>
+            {% if ip.tags %}
+              {% for t in (ip.tags or '').split(',') %}
+                {% if t.strip() %}
+                  <span class="tag-pill">{{ t.strip() }}</span>
+                {% endif %}
+              {% endfor %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ ip.last_seen.strftime('%Y-%m-%d %H:%M') if ip.last_seen else 'Never' }}</td>
+          <td style="text-align:right;">
+            <button class="btn btn-outline btn-sm" onclick="openIpModal({{ ip.id | tojson }}, '{{ ip.hostname | default('') | e }}', '{{ ip.status }}', '{{ ip.description | default('') | e }}', '{{ ip.tags | default('') | e }}')">Edit</button>
+            <a href="/monitors/new?ip={{ ip.address }}" class="btn btn-primary btn-sm" style="margin-left:6px;">Monitor</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var total = {{ stats.total }};
+  var used = {{ stats.used }};
+  var pct = total ? ((used / total) * 100) : 0;
+  var color = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#eab308' : '#22c55e');
+  if(window.drawDonut) window.drawDonut('#subnetDonut', pct, color);
+});
+</script>
+
+{% else %}
+<div class="card" style="text-align:center;padding:40px;color:var(--text-secondary);">
+  <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px;">No subnets yet</div>
+  <div style="margin-bottom:16px;">Add a subnet to get started.</div>
+  <button class="btn btn-primary" onclick="openAddSubnetModal()">+ Add Subnet</button>
+</div>
+{% endif %}
+
+<script>
+function openAddSubnetModal(){
+  openModal({
+    title: 'Add Subnet',
+    body: '<label>Network CIDR</label><input id="modNet" placeholder="10.0.0.0/24" style="margin-bottom:12px;">'+
+          '<label>Description</label><input id="modDesc" style="margin-bottom:12px;">'+
+          '<label>VLAN Tags (comma separated)</label><input id="modVlan" placeholder="10, 20">',
+    confirmText: 'Save Subnet',
+    onConfirm: function(){
+      fetch('/api/subnets', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          network: document.getElementById('modNet').value,
+          description: document.getElementById('modDesc').value,
+          vlan_tags: document.getElementById('modVlan').value
+        })
+      }).then(function(r){ return r.json(); }).then(function(j){
+        if(j.id) location.reload(); else alert(j.error || 'Error saving subnet');
+      });
+    }
+  });
+}
+
+function openEditSubnetModal(){
+  var s = window.currentSubnet || {};
+  openModal({
+    title: 'Edit Subnet',
+    body: '<label>Description</label><input id="modDesc" value="'+escapeHtml(s.description || '')+'" style="margin-bottom:12px;">'+
+          '<label>VLAN Tags</label><input id="modVlan" value="'+escapeHtml(s.vlan_tags || '')+'">',
+    confirmText: 'Save Changes',
+    onConfirm: function(){
+      fetch('/api/subnets/' + s.id, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          description: document.getElementById('modDesc').value,
+          vlan_tags: document.getElementById('modVlan').value
+        })
+      }).then(function(){ location.reload(); });
+    }
+  });
+}
+
+function confirmDeleteSubnet(){
+  var s = window.currentSubnet || {};
+  openModal({
+    title: 'Delete Subnet?',
+    body: '<p style="margin:0;color:var(--text-secondary);">This will permanently remove the subnet and all assigned IP addresses.</p>',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      fetch('/api/subnets/' + s.id + '/delete', {method:'POST'})
+        .then(function(){ window.location.href = '/ipam'; });
+    }
+  });
+}
+
+function openIpModal(id, hostname, status, description, tags){
+  openModal({
+    title: 'Edit IP Address',
+    body: '<label>Hostname</label><input id="modHostname" value="'+escapeHtml(hostname)+'" style="margin-bottom:12px;">'+
+          '<label>Status</label>'+
+          '<select id="modStatus" style="margin-bottom:12px;">'+
+            '<option value="free" '+(status==='free'?'selected':'')+'>Free</option>'+
+            '<option value="device" '+(status==='device'?'selected':'')+'>Device</option>'+
+            '<option value="vm" '+(status==='vm'?'selected':'')+'>VM</option>'+
+            '<option value="container" '+(status==='container'?'selected':'')+'>Container</option>'+
+            '<option value="reserved" '+(status==='reserved'?'selected':'')+'>Reserved</option>'+
+            '<option value="gateway" '+(status==='gateway'?'selected':'')+'>Gateway</option>'+
+            '<option value="dns" '+(status==='dns'?'selected':'')+'>DNS</option>'+
+            '<option value="dhcp" '+(status==='dhcp'?'selected':'')+'>DHCP</option>'+
+            '<option value="static" '+(status==='static'?'selected':'')+'>Static</option>'+
+            '<option value="offline" '+(status==='offline'?'selected':'')+'>Offline</option>'+
+          '</select>'+
+          '<label>Description</label><input id="modDesc" value="'+escapeHtml(description)+'" style="margin-bottom:12px;">'+
+          '<label>Tags (comma separated)</label><input id="modTags" value="'+escapeHtml(tags)+'">',
+    confirmText: 'Save',
+    onConfirm: function(){
+      fetch('/api/ip/' + id, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          hostname: document.getElementById('modHostname').value,
+          status: document.getElementById('modStatus').value,
+          description: document.getElementById('modDesc').value,
+          tags: document.getElementById('modTags').value
+        })
+      }).then(function(){ location.reload(); });
+    }
+  });
+}
+
+function escapeHtml(text){
+  if(!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Settings | Pulse{% endblock %}
+{% block header %}Settings{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+  <div class="card">
+    <div class="card-title">General</div>
+    <form method="post">
+      <label>History Retention (days)</label>
+      <input name="retention_days" type="number" value="{{ retention }}" required>
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">Default 30 days. Checks older than this are auto-deleted.</div>
+
+      <label style="margin-top:14px;">Subnet Auto-Scan Interval (minutes)</label>
+      <input name="subnet_scan_minutes" type="number" value="{{ scan_min }}" required>
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">How often subnets are scanned for new devices.</div>
+
+      <div style="margin-top:20px;display:flex;gap:12px;align-items:center;">
+        <button class="btn btn-primary" type="submit">Save Settings</button>
+        <button type="button" class="btn btn-danger" onclick="if(confirm('Prune all expired data now?')) fetch('/api/prune',{method:'POST'}).then(()=>alert('Done'));">Prune Now</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Webhooks</div>
+    <div style="overflow-x:auto;margin-bottom:16px;">
+      <table style="font-size:0.88rem;">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>URL</th>
+            <th style="white-space:nowrap;">Triggers</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for wh in webhooks %}
+          <tr>
+            <td>{{ wh.name }}</td>
+            <td style="font-family:monospace;font-size:0.82rem;">{{ wh.url }}</td>
+            <td style="white-space:nowrap;">
+              {% if wh.trigger_monitor %}<span class="tag-pill">Monitor</span>{% endif %}
+              {% if wh.trigger_ip_found %}<span class="tag-pill">IP Found</span>{% endif %}
+              {% if wh.trigger_cert_expiry %}<span class="tag-pill">Cert</span>{% endif %}
+              {% if wh.trigger_domain_expiry %}<span class="tag-pill">Domain</span>{% endif %}
+              {% if wh.is_default %}<span class="tag-pill" style="color:var(--primary);">Default</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+              <button class="btn btn-outline btn-sm" onclick="testWebhook({{ wh.id }}, this)">Test</button>
+              <form method="post" action="/api/webhooks/{{ wh.id }}/delete" onsubmit="return confirm('Delete this webhook?');" style="display:inline;">
+                <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:16px;">No webhooks configured</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:16px;">
+      <div style="font-weight:600;font-size:0.95rem;margin-bottom:12px;">Add Webhook</div>
+      <form method="post" action="/api/webhooks">
+        <label>Name</label>
+        <input name="name" required style="margin-bottom:10px;">
+        <label>URL</label>
+        <input name="url" placeholder="https://hooks.example.com/notify" required style="margin-bottom:10px;">
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:10px;">Trigger On</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="trig_mon">
+              <input type="checkbox" id="trig_mon" name="trigger_monitor" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="trig_mon" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">Monitor Down/Up</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="trig_ip">
+              <input type="checkbox" id="trig_ip" name="trigger_ip_found">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="trig_ip" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">IP Found</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="trig_cert">
+              <input type="checkbox" id="trig_cert" name="trigger_cert_expiry">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="trig_cert" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">Cert Expiry</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="trig_dom">
+              <input type="checkbox" id="trig_dom" name="trigger_domain_expiry">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="trig_dom" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">Domain Expiry</label>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="wh_default">
+              <input type="checkbox" id="wh_default" name="is_default">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="wh_default" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">Set as default for new monitors</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label class="toggle-switch" for="wh_existing">
+              <input type="checkbox" id="wh_existing" name="apply_existing">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="wh_existing" style="font-size:0.88rem;cursor:pointer;margin-bottom:0;">Apply to all existing monitors now</label>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit">Add Webhook</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function testWebhook(id, btn){
+  var cell = btn.closest('td');
+  var existing = cell.querySelector('.wh-test-result');
+  var span = existing;
+  if(!span){
+    span = document.createElement('div');
+    span.className = 'wh-test-result';
+    span.style.cssText = 'font-size:0.78rem;margin-top:6px;';
+    cell.appendChild(span);
+  }
+  span.textContent = 'Sending...';
+  span.style.color = 'var(--text-secondary)';
+  fetch('/api/webhooks/' + id + '/test', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if(j.ok){
+        span.textContent = 'Test delivered (' + j.status + ')';
+        span.style.color = '#3ccf4a';
+      } else {
+        span.textContent = 'Test failed: ' + (j.error || 'Unknown');
+        span.style.color = 'var(--danger)';
+      }
+    })
+    .catch(function(e){
+      span.textContent = 'Test failed: ' + e;
+      span.style.color = 'var(--danger)';
+    });
+}
+</script>
+{% endblock %}

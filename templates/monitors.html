@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}Monitors | Pulse{% endblock %}
+{% block header %}Uptime Monitors{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+  <button class="btn btn-primary" onclick="openAddGroupModal()">+ New Group</button>
+  <a href="/monitors/new" class="btn btn-primary">+ New Monitor</a>
+</div>
+
+{% macro render_group(group, level=0) %}
+<div class="group-wrapper" data-group-id="{{ group.id }}" data-parent-id="{{ group.parent_id or '' }}" style="margin-left: {{ level * 20 }}px;">
+  <div class="group-row" style="border-left: 3px solid {{ group.color }};">
+    <span class="drag-handle" style="cursor:grab;margin-right:8px;color:var(--text-secondary);font-size:1rem;user-select:none;">⋮⋮</span>
+    <span class="chevron" style="transition:transform .2s;font-size:0.75rem;width:14px;display:inline-block;">▶</span>
+    <span style="flex:1;font-weight:600;">{{ group.name }}</span>
+    <span style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;margin-right:8px;">
+      {% set child_count = group.children|length %}
+      {% set mon_count = group.monitors|length %}
+      {{ mon_count }} monitor{{ 's' if mon_count != 1 else '' }}{% if child_count > 0 %} · {{ child_count }} subgroup{{ 's' if child_count != 1 else '' }}{% endif %}
+    </span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button class="btn btn-outline btn-sm" type="button" onclick='openEditGroupModal({{ group.id | tojson }}, {{ group.name | tojson }}, {{ group.color | tojson }}, {{ group.parent_id | default(None) | tojson }})'>Edit</button>
+      <form method="post" action="/api/groups/{{ group.id }}/delete" onsubmit="return confirm('Delete group &quot;{{ group.name | e }}&quot;?');" style="display:inline;">
+        <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="group-content" style="display:none;padding-left:16px;">
+    <div class="monitor-list" data-group-id="{{ group.id }}">
+      {% for monitor in group.monitors|sort(attribute='sort_order') %}
+        {% set checks_list = recent.get(monitor.id, []) %}
+        {% set eff_status = monitor.status %}
+        <div class="monitor-row" data-monitor-id="{{ monitor.id }}" style="cursor:grab;">
+          <span class="drag-handle" style="cursor:grab;margin-right:8px;color:var(--text-secondary);user-select:none;">⋮</span>
+          <div style="min-width:80px;">
+            {% if eff_status == 'up' %}
+              <span class="status-badge status-up monitor-status-pill" data-monitor-id="{{ monitor.id }}">{{ monitor.uptime_24h | round | int }}%</span>
+            {% elif eff_status == 'down' %}
+              <span class="status-badge status-down monitor-status-pill" data-monitor-id="{{ monitor.id }}">Down</span>
+            {% elif eff_status == 'degraded' %}
+              <span class="status-badge status-degraded monitor-status-pill" data-monitor-id="{{ monitor.id }}">Retry</span>
+            {% else %}
+              <span class="status-badge status-pending monitor-status-pill" data-monitor-id="{{ monitor.id }}">Pending</span>
+            {% endif %}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <a href="/monitors/{{ monitor.id }}" style="color:var(--text);text-decoration:none;font-weight:600;font-size:0.95rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ monitor.name }}</a>
+            <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">{{ monitor.monitor_type | upper }} · {{ monitor.target }}</div>
+          </div>
+          <div class="uptime-bars monitor-uptime-bars" data-monitor-id="{{ monitor.id }}" style="min-width:120px;justify-content:flex-end;">
+            {% for c in checks_list[-40:] %}
+              <div class="uptime-bar {{ c.status }}"></div>
+            {% else %}
+              <span style="font-size:0.75rem;color:var(--text-secondary);">No data</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="subgroup-list" data-parent-group-id="{{ group.id }}">
+      {% for child in group.children|sort(attribute='sort_order') %}
+        {{ render_group(child, level + 1) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+<div id="top-groups-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+  {% for group in groups|sort(attribute='sort_order') %}
+    {{ render_group(group) }}
+  {% endfor %}
+</div>
+
+{% if ungrouped %}
+<div style="margin-top:20px;">
+  <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;font-weight:600;">Ungrouped</div>
+  <div id="ungrouped-list" style="display:flex;flex-direction:column;gap:10px;">
+    {% for monitor in ungrouped|sort(attribute='sort_order') %}
+      {% set checks_list = recent.get(monitor.id, []) %}
+      {% set eff_status = monitor.status %}
+      <div class="monitor-row" data-monitor-id="{{ monitor.id }}" style="cursor:grab;">
+        <span class="drag-handle" style="cursor:grab;margin-right:8px;color:var(--text-secondary);user-select:none;">⋮</span>
+        <div style="min-width:80px;">
+          {% if eff_status == 'up' %}
+            <span class="status-badge status-up monitor-status-pill" data-monitor-id="{{ monitor.id }}">{{ monitor.uptime_24h | round | int }}%</span>
+          {% elif eff_status == 'down' %}
+            <span class="status-badge status-down monitor-status-pill" data-monitor-id="{{ monitor.id }}">Down</span>
+          {% elif eff_status == 'degraded' %}
+            <span class="status-badge status-degraded monitor-status-pill" data-monitor-id="{{ monitor.id }}">Retry</span>
+          {% else %}
+            <span class="status-badge status-pending monitor-status-pill" data-monitor-id="{{ monitor.id }}">Pending</span>
+          {% endif %}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <a href="/monitors/{{ monitor.id }}" style="color:var(--text);text-decoration:none;font-weight:600;font-size:0.95rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ monitor.name }}</a>
+          <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">{{ monitor.monitor_type | upper }} · {{ monitor.target }}</div>
+        </div>
+        <div class="uptime-bars monitor-uptime-bars" data-monitor-id="{{ monitor.id }}" style="min-width:120px;justify-content:flex-end;">
+          {% for c in checks_list[-40:] %}
+            <div class="uptime-bar {{ c.status }}"></div>
+          {% else %}
+            <span style="font-size:0.75rem;color:var(--text-secondary);">No data</span>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+{%- macro render_groups(groups) -%}
+{%- set comma = namespace(needs=false) -%}
+{%- for g in groups recursive -%}
+{%- if comma.needs -%},{%- endif -%}
+{%- set comma.needs = true -%}
+{id: {{ g.id | tojson }}, name: {{ g.name | tojson }}}
+{{- loop(g.children) -}}
+{%- endfor -%}
+{%- endmacro -%}
+
+window.allGroups = [{{ render_groups(groups) }}];
+
+function buildColorSwatches(selectedColor){
+  var colors = ['#3b82f6','#ef4444','#22c55e','#eab308','#a855f7','#06b6d4','#f97316','#ec4899'];
+  var html = '';
+  colors.forEach(function(c){
+    var isActive = c === selectedColor;
+    html += '<button type="button" class="color-swatch '+ (isActive ? 'active' : '') +'" data-color="'+ c +'" '+
+            'style="width:28px;height:28px;border-radius:50%;background:'+ c +';border:2px solid '+ (isActive ? 'var(--text)' : 'transparent') +';cursor:pointer;"></button>';
+  });
+  return html;
+}
+
+function initColorSwatches(){
+  document.querySelectorAll('.color-swatch').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.color-swatch').forEach(function(b){
+        b.style.borderColor = 'transparent';
+        b.classList.remove('active');
+      });
+      btn.style.borderColor = 'var(--text)';
+      btn.classList.add('active');
+      var hidden = document.getElementById('grpColor') || document.getElementById('editGrpColor');
+      if(hidden) hidden.value = btn.dataset.color;
+    });
+  });
+}
+
+// Toggle expand/collapse
+document.querySelectorAll('.group-row').forEach(function(el){
+  el.addEventListener('click', function(e){
+    if(e.target.closest('.drag-handle') || e.target.closest('button') || e.target.closest('form')) return;
+    var wrapper = el.closest('.group-wrapper');
+    var content = wrapper.querySelector('.group-content');
+    var chev = el.querySelector('.chevron');
+    if(content){
+      var showing = content.style.display !== 'none';
+      content.style.display = showing ? 'none' : 'block';
+      if(chev) chev.style.transform = showing ? '' : 'rotate(90deg)';
+    }
+  });
+});
+
+// Auto-expand groups that have content
+document.querySelectorAll('.group-wrapper').forEach(function(w){
+  var content = w.querySelector('.group-content');
+  if(content && content.querySelector('.monitor-row, .group-wrapper')) content.style.display = 'block';
+});
+
+// Top-level groups sortable
+var topList = document.getElementById('top-groups-list');
+if(topList){
+  Sortable.create(topList, {
+    handle: '.group-row > .drag-handle',
+    animation: 150,
+    draggable: '.group-wrapper',
+    onEnd: function(){
+      var ids = Array.from(topList.children).map(function(el){ return el.dataset.groupId; });
+      fetch('/api/groups/reorder', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ids: ids, parent_id: null})
+      });
+    }
+  });
+}
+
+// Subgroups sortable within each parent
+document.querySelectorAll('.subgroup-list').forEach(function(el){
+  Sortable.create(el, {
+    handle: '.group-row > .drag-handle',
+    animation: 150,
+    draggable: '.group-wrapper',
+    onEnd: function(){
+      var parentWrapper = el.closest('.group-wrapper');
+      var ids = Array.from(el.children).map(function(c){ return c.dataset.groupId; });
+      fetch('/api/groups/reorder', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ids: ids, parent_id: parentWrapper ? parentWrapper.dataset.groupId : null})
+      });
+    }
+  });
+});
+
+// Monitors sortable within each group
+document.querySelectorAll('.monitor-list').forEach(function(el){
+  Sortable.create(el, {
+    handle: '.monitor-row > .drag-handle',
+    animation: 150,
+    draggable: '.monitor-row',
+    onEnd: function(){
+      var ids = Array.from(el.children).map(function(c){ return c.dataset.monitorId; });
+      fetch('/api/monitors/reorder', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ids: ids})
+      });
+    }
+  });
+});
+
+// Ungrouped monitors sortable
+var ungroupedList = document.getElementById('ungrouped-list');
+if(ungroupedList){
+  Sortable.create(ungroupedList, {
+    handle: '.monitor-row > .drag-handle',
+    animation: 150,
+    draggable: '.monitor-row',
+    onEnd: function(){
+      var ids = Array.from(ungroupedList.children).map(function(c){ return c.dataset.monitorId; });
+      fetch('/api/monitors/reorder', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ids: ids})
+      });
+    }
+  });
+}
+
+function updateMonitors(){
+  fetch('/api/monitors/status').then(function(r){ return r.json(); }).then(function(data){
+    data.forEach(function(m){
+      var pill = document.querySelector('.monitor-status-pill[data-monitor-id="'+m.id+'"]');
+      if(pill){
+        var eff = m.status || 'pending';
+        var curText = pill.textContent.trim().toLowerCase();
+        var newText = eff==='up'?(Math.round(m.uptime_24h)+'%'):(eff==='down'?'Down':(eff==='degraded'?'Retry':'Pending'));
+        var curClass = pill.classList.contains('status-up')?'up':(pill.classList.contains('status-down')?'down':(pill.classList.contains('status-degraded')?'degraded':'pending'));
+        var newClass = eff==='up'?'up':(eff==='down'?'down':(eff==='degraded'?'degraded':'pending'));
+        if(curClass !== newClass || curText !== newText.toLowerCase()){
+          pill.className = 'status-badge monitor-status-pill status-' + newClass;
+          pill.textContent = newText;
+        }
+      }
+      var barsContainer = document.querySelector('.monitor-uptime-bars[data-monitor-id="'+m.id+'"]');
+      if(barsContainer){
+        var html = '';
+        var checks = m.checks || [];
+        if(checks.length === 0){
+          html = '<span style="font-size:0.75rem;color:var(--text-secondary);">No data</span>';
+        } else {
+          checks.slice(-40).forEach(function(c){ html += '<div class="uptime-bar '+c.status+'"></div>'; });
+        }
+        barsContainer.innerHTML = html;
+      }
+    });
+  });
+}
+setInterval(updateMonitors, 5000);
+
+function openAddGroupModal(){
+  var parentOptions = '<option value="">None (top level)</option>';
+  window.allGroups.forEach(function(g){
+    parentOptions += '<option value="'+g.id+'">'+escapeHtml(g.name)+'</option>';
+  });
+
+  openModal({
+    title: 'New Group',
+    body: '<label>Group Name</label><input id="grpName" style="margin-bottom:12px;">'+
+          '<label>Parent Group (optional)</label><select id="grpParent" style="margin-bottom:12px;">'+parentOptions+'</select>'+
+          '<label>Color</label>'+
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'+
+            buildColorSwatches('#3b82f6') +
+          '</div>'+
+          '<input type="hidden" id="grpColor" value="#3b82f6">',
+    confirmText: 'Create Group',
+    onConfirm: function(){
+      var selected = document.querySelector('#appModal .color-swatch.active');
+      if(selected) document.getElementById('grpColor').value = selected.dataset.color;
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/api/groups';
+      form.innerHTML = '<input name="name" value="'+escapeHtml(document.getElementById('grpName').value)+'">'+
+                       '<input name="parent_id" value="'+document.getElementById('grpParent').value+'">'+
+                       '<input name="color" value="'+document.getElementById('grpColor').value+'">';
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+
+  setTimeout(initColorSwatches, 50);
+}
+
+function openEditGroupModal(id, name, color, parentId){
+  var parentOptions = '<option value="">None (top level)</option>';
+  window.allGroups.forEach(function(g){
+    if(g.id !== id){
+      var sel = (parentId === g.id || String(parentId) === String(g.id)) ? 'selected' : '';
+      parentOptions += '<option value="'+g.id+'" '+sel+'>'+escapeHtml(g.name)+'</option>';
+    }
+  });
+
+  openModal({
+    title: 'Edit Group',
+    body: '<label>Group Name</label><input id="editGrpName" value="'+escapeHtml(name)+'" style="margin-bottom:12px;">'+
+          '<label>Parent Group</label><select id="editGrpParent" style="margin-bottom:12px;">'+parentOptions+'</select>'+
+          '<label>Color</label>'+
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'+
+            buildColorSwatches(color) +
+          '</div>'+
+          '<input type="hidden" id="editGrpColor" value="'+color+'">',
+    confirmText: 'Save Changes',
+    onConfirm: function(){
+      var selected = document.querySelector('#appModal .color-swatch.active');
+      if(selected) document.getElementById('editGrpColor').value = selected.dataset.color;
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/api/groups/' + id;
+      form.innerHTML = '<input name="name" value="'+escapeHtml(document.getElementById('editGrpName').value)+'">'+
+                       '<input name="parent_id" value="'+document.getElementById('editGrpParent').value+'">'+
+                       '<input name="color" value="'+document.getElementById('editGrpColor').value+'">';
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+
+  setTimeout(initColorSwatches, 50);
+}
+
+function escapeHtml(text){
+  if(!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+{% endblock %}

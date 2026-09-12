@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if monitor else 'New' }} Monitor | Pulse{% endblock %}
+{% block header %}{{ 'Edit' if monitor else 'Add New' }} Monitor{% endblock %}
+{% block content %}
+<form method="post" class="card" style="max-width:960px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;">
+    <div>
+      <h3 style="margin-top:0;">General</h3>
+      <label>Monitor Type</label>
+      <select name="monitor_type" required>
+        {% for t in ['ping','http','https','docker'] %}
+          <option value="{{ t }}" {% if monitor and monitor.monitor_type==t %}selected{% endif %}>{{ t | upper }}</option>
+        {% endfor %}
+      </select>
+
+      <label style="margin-top:14px;">Friendly Name</label>
+      <input name="name" value="{{ monitor.name if monitor else '' }}" placeholder="Hostname" required>
+
+      <label style="margin-top:14px;">Target / URL / Hostname</label>
+      <input name="target" value="{{ monitor.target if monitor else (prefill_ip or '') }}" required>
+
+      <div class="type-field type-docker" style="display:none;">
+        <label style="margin-top:14px;">Docker Container Name / ID</label>
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:6px;">Requires local Docker socket access</div>
+      </div>
+
+      <label style="margin-top:14px;">Heartbeat Interval (seconds)</label>
+      <input name="interval_seconds" type="number" value="{{ monitor.interval_seconds if monitor else 60 }}">
+
+      <label style="margin-top:14px;">Retries</label>
+      <input name="retries" type="number" value="{{ monitor.retries if monitor else 0 }}">
+
+      <label style="margin-top:14px;">Timeout (seconds)</label>
+      <input name="timeout_seconds" type="number" value="{{ monitor.timeout_seconds if monitor else 10 }}">
+    </div>
+
+    <div>
+      <h3 style="margin-top:0;">HTTP Options</h3>
+      <div class="type-field type-http type-https" style="display:none;">
+        <label>Method</label>
+        <select name="http_method">
+          <option value="GET" {% if monitor and monitor.http_method=='GET' %}selected{% endif %}>GET</option>
+          <option value="POST" {% if monitor and monitor.http_method=='POST' %}selected{% endif %}>POST</option>
+        </select>
+
+        <label style="margin-top:14px;">Body</label>
+        <textarea name="http_body" rows="3">{{ monitor.http_body if monitor else '' }}</textarea>
+
+        <label style="margin-top:14px;">Headers (JSON)</label>
+        <textarea name="http_headers" rows="3" placeholder='{"Authorization":"Bearer token"}'>{{ monitor.http_headers if monitor else '' }}</textarea>
+
+        <div style="margin-top:16px;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">Certificate Expiry Notification</div>
+          <div class="pill-radio-group">
+            <input type="radio" name="cert_expiry" value="0" id="cert_off" {% if not monitor or not monitor.cert_expiry_notification %}checked{% endif %}>
+            <label for="cert_off">OFF</label>
+            <input type="radio" name="cert_expiry" value="1" id="cert_on" {% if monitor and monitor.cert_expiry_notification %}checked{% endif %}>
+            <label for="cert_on">ON</label>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">Domain Name Expiry Notification</div>
+          <div class="pill-radio-group">
+            <input type="radio" name="domain_expiry" value="0" id="dom_off" {% if not monitor or not monitor.domain_expiry_notification %}checked{% endif %}>
+            <label for="dom_off">OFF</label>
+            <input type="radio" name="domain_expiry" value="1" id="dom_on" {% if monitor and monitor.domain_expiry_notification %}checked{% endif %}>
+            <label for="dom_on">ON</label>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:24px;">Notifications</h3>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">Webhooks</div>
+        {% if webhooks %}
+          {% for wh in webhooks %}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:0.9rem;">{{ wh.name }}</span>
+            <div class="pill-radio-group" style="margin:0;">
+              <input type="radio" name="webhook_sel_{{ wh.id }}" value="0" id="wh_{{ wh.id }}_off"
+                {% if wh.id|string not in monitor_webhook_ids %}checked{% endif %}
+                onchange="document.getElementById('wh_chk_{{ wh.id }}').checked=false">
+              <label for="wh_{{ wh.id }}_off">OFF</label>
+              <input type="radio" name="webhook_sel_{{ wh.id }}" value="1" id="wh_{{ wh.id }}_on"
+                {% if wh.id|string in monitor_webhook_ids %}checked{% endif %}
+                onchange="document.getElementById('wh_chk_{{ wh.id }}').checked=true">
+              <label for="wh_{{ wh.id }}_on">ON</label>
+            </div>
+            <input type="checkbox" name="webhook_ids" value="{{ wh.id }}" id="wh_chk_{{ wh.id }}" style="display:none;"
+              {% if wh.id|string in monitor_webhook_ids %}checked{% endif %}>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="font-size:0.85rem;color:var(--text-secondary);">No webhooks configured. Add one in Settings.</div>
+        {% endif %}
+      </div>
+
+      <h3 style="margin-top:24px;">Group</h3>
+      <select name="group_id">
+        <option value="">None</option>
+        {% for g in groups %}
+          <option value="{{ g.id }}" {% if monitor and monitor.group_id==g.id %}selected{% endif %}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div style="margin-top:28px;display:flex;gap:10px;">
+    <button class="btn btn-primary" type="submit">Save Monitor</button>
+    <a href="/monitors" class="btn btn-outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

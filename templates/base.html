@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Pulse{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app-container">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="{{ url_for('static', filename='icon.png') }}" alt="Pulse" class="sidebar-icon">
+      Pulse
+    </div>
+    <ul class="sidebar-nav">
+      <li>
+        <a class="{% if request.path == '/' %}active{% endif %}" href="/">
+          <img src="https://cdn-icons-png.flaticon.com/128/3917/3917033.png" alt="" class="nav-icon"> Dashboard
+        </a>
+      </li>
+      <li>
+        <a class="{% if request.path.startswith('/ipam') %}active{% endif %}" href="/ipam">
+          <img src="https://cdn-icons-png.flaticon.com/128/3917/3917538.png" alt="" class="nav-icon"> IPAM
+        </a>
+      </li>
+      <li>
+        <a class="{% if request.path.startswith('/monitors') and request.path != '/monitors/new' %}active{% endif %}" href="/monitors">
+          <img src="https://cdn-icons-png.flaticon.com/128/5528/5528038.png" alt="" class="nav-icon"> Monitors
+        </a>
+      </li>
+      <li>
+        <a class="{% if request.path == '/monitors/new' %}active{% endif %}" href="/monitors/new">
+          <img src="https://cdn-icons-png.flaticon.com/128/3917/3917179.png" alt="" class="nav-icon"> New Monitor
+        </a>
+      </li>
+      <li>
+        <a class="{% if request.path == '/settings' %}active{% endif %}" href="/settings">
+          <img src="https://cdn-icons-png.flaticon.com/128/3917/3917058.png" alt="" class="nav-icon"> Settings
+        </a>
+      </li>
+    </ul>
+    <div class="sidebar-version">{{ app_version }}</div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <h2 style="margin:0;font-size:1.05rem;font-weight:600;">{% block header %}{% endblock %}</h2>
+      <button id="theme-toggle" class="btn btn-outline" style="font-size:1rem;">☀/☾</button>
+    </div>
+    <div class="page-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div style="margin-bottom:16px;">
+            {% for category, message in messages %}
+              <div class="card" style="background: {% if category=='success' %}rgba(74,222,128,0.1){% else %}rgba(248,113,113,0.1){% endif %}; color: {% if category=='success' %}#22c55e{% else %}var(--danger){% endif %};">
+                {{ message }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<div id="appModal" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Title</div>
+      <button class="btn btn-outline" style="padding:4px 8px;font-size:0.8rem;" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">Content</div>
+    <div class="modal-footer" id="modalFooter">
+      <button class="btn btn-primary" id="modalConfirmBtn">Confirm</button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

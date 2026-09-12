@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | Pulse{% endblock %}
+{% block header %}Dashboard{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:24px;">
+  <div class="card">
+    <div style="color:var(--text-secondary);font-size:0.85rem;">Subnets</div>
+    <div style="font-size:2rem;font-weight:700;margin-top:8px;">{{ subnet_count }}</div>
+  </div>
+  <div class="card">
+    <div style="color:var(--text-secondary);font-size:0.85rem;">Monitors</div>
+    <div style="font-size:2rem;font-weight:700;margin-top:8px;">{{ monitor_count }}</div>
+  </div>
+  <div class="card">
+    <div style="color:var(--text-secondary);font-size:0.85rem;">Up</div>
+    <div style="font-size:2rem;font-weight:700;margin-top:8px;color:var(--primary);">{{ up_count }}</div>
+  </div>
+  <div class="card">
+    <div style="color:var(--text-secondary);font-size:0.85rem;">Down</div>
+    <div style="font-size:2rem;font-weight:700;margin-top:8px;color:var(--danger);">{{ down_count }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+    <div class="card-title" style="margin:0;">Recent Activity</div>
+    <form method="post" action="/api/events/clear" onsubmit="return confirm('Clear all events?');">
+      <button class="btn btn-outline btn-sm" type="submit">Clear All Events</button>
+    </form>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="event-table">
+      <thead>
+        <tr>
+          <th>Group Name</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>DateTime</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in events %}
+        <tr>
+          <td>{{ ev.group_name or '—' }}</td>
+          <td>{{ ev.name or '—' }}</td>
+          <td>
+            {% if ev.status == 'up' %}
+              <span class="status-badge status-up">Up</span>
+            {% elif ev.status == 'down' %}
+              <span class="status-badge status-down">Down</span>
+            {% elif ev.status == 'detected' %}
+              <span class="status-badge" style="background:rgba(168,85,247,0.15);color:#c084fc;">Detected</span>
+            {% elif ev.status == 'alert' %}
+              <span class="status-badge" style="background:rgba(234,179,8,0.15);color:#facc15;">Alert</span>
+            {% else %}
+              <span class="status-badge status-pending">{{ ev.status | capitalize }}</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">{{ ev.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>{{ ev.message or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" style="text-align:center;color:var(--text-secondary);padding:24px;">No recent activity</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
